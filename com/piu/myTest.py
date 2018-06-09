@@ -6,16 +6,14 @@ from SQLiteManager import init
 import threading
 import time
 from gateAPI import GateIO
+from constants import Constant
 
 ## 填写 apiKey APISECRET
-apiKey = '2966D44B-2A70-4373-92A0-1052A60D613F'
-secretKey = '8cc1d799ce506de059f143884e08073ae6d8476f0e861eb73c6800b5055eee31'
-## address
-btcAddress = 'your btc address'
-
+apiKey = Constant.apiKey
+secretKey = Constant.secretKey
 ## Provide constants
-API_QUERY_URL = 'data.gateio.io'
-API_TRADE_URL = 'api.gateio.io'
+API_QUERY_URL = Constant.API_QUERY_URL
+API_TRADE_URL = Constant.API_TRADE_URL
 
 ## Create a gate class instance
 gate_query = GateIO(API_QUERY_URL, apiKey, secretKey)
@@ -27,6 +25,7 @@ def tradeAction(arg):
 
 def orderAction(arg):
     time.sleep(1)
+    print(gate_trade.sell('etc_btc', '0.001', '11222'))
 
 def main():
     #数据表的创建和资产的初始化在其他地方进行
