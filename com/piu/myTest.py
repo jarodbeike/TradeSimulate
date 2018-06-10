@@ -45,11 +45,20 @@ gate_query = GateIO(API_QUERY_URL, apiKey, secretKey)
 gate_trade = GateIO(API_TRADE_URL, apiKey, secretKey)
 
 def tradeAction(arg):
+    currencyPair = CURRENCY_OTHER + '_' + CURRENCY_BASE
+    #{"eos_usdt":{"decimal_places":4,"min_amount":0.0001,"fee":0.2}}
     while(1):
-        ticker = gate_query.ticker(CURRENCY_OTHER + '_' + CURRENCY_BASE)
-        #print(ticker)
+        ticker = gate_query.ticker(currencyPair)
+        buyOrderOpenList = SQLiteManager.queryOrderNotFilled(OWNER_ID, SIDE_BUY, STATUS_ACCEPTED, STATUS_HALF_FILLED)
+        if buyOrderOpenList is not None:
+            for e in range(len(buyOrderOpenList)):
+                print(buyOrderOpenList[e])
+
+        sellOrderOpenList = SQLiteManager.queryOrderNotFilled(OWNER_ID, SIDE_SELL, STATUS_ACCEPTED, STATUS_HALF_FILLED)
+        if sellOrderOpenList is not None:
+            for e in range(len(sellOrderOpenList)):
+                print(sellOrderOpenList[e])
         time.sleep(10)
-        break
 
 def orderAction(arg):
     currencyPair = CURRENCY_OTHER + '_' + CURRENCY_BASE
@@ -69,7 +78,7 @@ def orderAction(arg):
             availableAmount = Decimal(currentBalance) - Decimal(freezeAmount) + (Decimal(sellAmount) - Decimal(buyAmount));
             amount = 100;
             lastFreezeAmount = Decimal(last) * Decimal(amount)
-            print('availableAmount:[{}],lastFreezeAmount:[{}]'.format(availableAmount.quantize(Decimal('0.0000')), lastFreezeAmount.quantize(Decimal('0.0000'))))
+            print('buy_availableAmount:[{}],buy_lastFreezeAmount:[{}]'.format(availableAmount.quantize(Decimal('0.0000')), lastFreezeAmount.quantize(Decimal('0.0000'))))
             #购买力足够，使用事务进行DB操作
             if availableAmount > lastFreezeAmount:
                 conn = SQLiteManager.get_conn(SQLiteManager.DB_FILE_PATH)
@@ -85,17 +94,43 @@ def orderAction(arg):
         #showList(buyOrderOpenList)
         endBalanceBase = SQLiteManager.checkBalance(OWNER_ID, CURRENCY_BASE)
         print(endBalanceBase)
+
         #卖出订单创建，在挂订单不能超过10个
         sellOrderOpenList = SQLiteManager.queryOrderNotFilled(OWNER_ID, SIDE_SELL, STATUS_ACCEPTED, STATUS_HALF_FILLED)
         if sellOrderOpenList is None or len(sellOrderOpenList) < 10:
-            conn = SQLiteManager.get_conn(SQLiteManager.DB_FILE_PATH)
-        time.sleep(10)
-    #print('the arg is:%s' % arg)
+            last = ticker.get("last")
+            balanceBase = SQLiteManager.checkBalance(OWNER_ID, CURRENCY_OTHER)
+            balanceId = balanceBase.get("balanceId")
+            currentBalance = balanceBase.get("currentBalance")
+            buyAmount = balanceBase.get("buyAmount")
+            sellAmount = balanceBase.get("sellAmount")
+            freezeAmount = balanceBase.get("freezeAmount")
+            availableAmount = Decimal(currentBalance) - Decimal(freezeAmount) + (Decimal(sellAmount) - Decimal(buyAmount));
+            amount = 100;
+            lastFreezeAmount = Decimal(last) * Decimal(amount)
+            print('sell_availableAmount:[{}],sell_lastFreezeAmount:[{}]'.format(availableAmount.quantize(Decimal('0.0000')), lastFreezeAmount.quantize(Decimal('0.0000'))))
+            #购买力足够，使用事务进行DB操作
+            if availableAmount > lastFreezeAmount:
+                conn = SQLiteManager.get_conn(SQLiteManager.DB_FILE_PATH)
+                orderId = SQLiteManager.insertOrder(conn, OWNER_ID, SIDE_SELL, currencyPair, last, amount, 0, 0, STATUS_ACCEPTED)
+                SQLiteManager.updateBalance(conn, OWNER_ID, CURRENCY_OTHER, 0, 0, str(-lastFreezeAmount.quantize(Decimal('0.0000'))))
+                endFreezeAmount = Decimal(freezeAmount) - lastFreezeAmount
+                SQLiteManager.insertBalanceLog(conn, OWNER_ID, balanceId, CURRENCY_OTHER,
+                                               currentBalance, currentBalance, buyAmount, buyAmount,
+                                               sellAmount, sellAmount, freezeAmount, str(endFreezeAmount.quantize(Decimal('0.0000'))),
+                                               DATA_TYPE_ORDER, orderId, BIZ_TYPE_SELL_ORDER)
+                conn.commit()
+        #展示已有未成交订单
+        #showList(sellOrderOpenList)
+        endBalanceOther = SQLiteManager.checkBalance(OWNER_ID, CURRENCY_OTHER)
+        print(endBalanceOther)
 
-def showList(list):
-    if list is not None and len(list) > 0:
-        for e in range(len(list)):
-            print(list[e])
+        time.sleep(10)
+
+def showList(someList):
+    if someList is not None and len(someList) > 0:
+        for e in range(len(someList)):
+            print(someList[e])
 
 def main():
     #数据表的创建和资产的初始化在其他地方进行
