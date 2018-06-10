@@ -56,11 +56,11 @@ def get_conn(path):
     连接对象'''
     conn = sqlite3.connect(path)
     if os.path.exists(path) and os.path.isfile(path):
-        print('硬盘上面:[{}]'.format(path))
+        #print('硬盘上面:[{}]'.format(path))
         return conn
     else:
         conn = None
-        print('内存上面:[:memory:]')
+        #print('内存上面:[:memory:]')
         return sqlite3.connect(':memory:')
 
 def get_cursor(conn):
@@ -72,6 +72,12 @@ def get_cursor(conn):
         return conn.cursor()
     else:
         return get_conn('').cursor()
+
+def dict_factory(cursor, row):
+    d = {}
+    for idx, col in enumerate(cursor.description):
+        d[col[0]] = row[idx]
+    return d
 
 ###############################################################
 ####            创建|删除表操作     START
@@ -99,7 +105,7 @@ def create_table(conn, sql):
             print('执行sql:[{}]'.format(sql))
         cu.execute(sql)
         conn.commit()
-        print('创建数据库表成功!')
+        #print('创建数据库表成功!')
         close_all(conn, cu)
     else:
         print('the [{}] is empty or equal None!'.format(sql))
@@ -140,17 +146,17 @@ def saveWithoutCommit(conn, sql, data):
     if sql is not None and sql != '':
         if data is not None:
             cu = get_cursor(conn)
-            for d in data:
-                if SHOW_SQL:
-                    print('执行sql:[{}],参数:[{}]'.format(sql, d))
-                cu.execute(sql, d)
-            close_all(conn, cu)
+            if SHOW_SQL:
+                print('执行sql:[{}],参数:[{}]'.format(sql, data))
+            cu.execute(sql, data)
+            return cu.lastrowid
     else:
         print('the [{}] is empty or equal None!'.format(sql))
 
 def fetchall(conn, sql):
     '''查询所有数据'''
     if sql is not None and sql != '':
+        conn.row_factory = dict_factory
         cu = get_cursor(conn)
         if SHOW_SQL:
             print('执行sql:[{}]'.format(sql))
@@ -161,12 +167,29 @@ def fetchall(conn, sql):
         #    for e in range(len(r)):
         #        print(r[e])
     else:
-        print('the [{}] is empty or equal None!'.format(sql)) 
+        print('the [{}] is empty or equal None!'.format(sql))
+
+def fetchallWithCondition(conn, sql, data):
+    '''查询所有数据'''
+    if sql is not None and sql != '':
+        conn.row_factory = dict_factory
+        cu = get_cursor(conn)
+        if SHOW_SQL:
+            print('执行sql:[{}],参数:[{}]'.format(sql, data))
+        cu.execute(sql, data)
+        r = cu.fetchall()
+        return r
+        #if len(r) > 0:
+        #    for e in range(len(r)):
+        #        print(r[e])
+    else:
+        print('the [{}] is empty or equal None!'.format(sql))
 
 def fetchone(conn, sql, data):
     '''查询一条数据'''
     if sql is not None and sql != '':
         if data is not None:
+            conn.row_factory = dict_factory
             cu = get_cursor(conn)
             for d in data:
                 if SHOW_SQL:
@@ -201,11 +224,10 @@ def updateWithoutCommit(conn, sql, data):
     if sql is not None and sql != '':
         if data is not None:
             cu = get_cursor(conn)
-            for d in data:
-                if SHOW_SQL:
-                    print('执行sql:[{}],参数:[{}]'.format(sql, d))
-                cu.execute(sql, d)
-            close_all(conn, cu)
+            if SHOW_SQL:
+                print('执行sql:[{}],参数:[{}]'.format(sql, data))
+            cu.execute(sql, data)
+            return cu.lastrowid
     else:
         print('the [{}] is empty or equal None!'.format(sql))
 
@@ -230,7 +252,7 @@ def delete(conn, sql, data):
 ####            业务操作     START
 ###############################################################
 def create_table_order():
-    print('创建order表...')
+    #print('创建order表...')
     create_table_sql = '''CREATE TABLE IF NOT EXISTS `order` (
                           `orderId` INTEGER PRIMARY KEY AUTOINCREMENT,
                           `ownerId` int NOT NULL,
@@ -248,7 +270,7 @@ def create_table_order():
     create_table(conn, create_table_sql)
     
 def create_table_trade():
-    print('创建trade表...')
+    #print('创建trade表...')
     create_table_sql = '''CREATE TABLE IF NOT EXISTS `trade` (
                           `tradeId` INTEGER PRIMARY KEY AUTOINCREMENT,
                           `ownerId` int NOT NULL,
@@ -267,7 +289,7 @@ def create_table_trade():
     create_table(conn, create_table_sql)
     
 def create_table_balance():
-    print('创建balance表...')
+    #print('创建balance表...')
     create_table_sql = '''CREATE TABLE IF NOT EXISTS `balance` (
                           `balanceId` INTEGER PRIMARY KEY AUTOINCREMENT,
                           `ownerId` int NOT NULL,
@@ -283,7 +305,7 @@ def create_table_balance():
     create_table(conn, create_table_sql)
     
 def create_table_balanceLog():
-    print('创建balanceLog表...')
+    #print('创建balanceLog表...')
     create_table_sql = '''CREATE TABLE IF NOT EXISTS `balanceLog` (
                           `balanceLogId` INTEGER PRIMARY KEY AUTOINCREMENT,
                           `ownerId` int NOT NULL,
@@ -325,31 +347,31 @@ def checkBalance(ownerId, currency):
 
 def updateBalance(conn, ownerId, currency, lastBuyAmount, lastSellAmount, lastFreezeAmount):
     update_sql = '''UPDATE `balance` SET buyAmount = buyAmount + ?, sellAmount = sellAmount + ?, freezeAmount = freezeAmount + ?, updateTime = ? WHERE ownerId = ? and currency = ?'''
-    data = [(lastBuyAmount, lastSellAmount, lastFreezeAmount, GetNowTime(), ownerId, currency)]
-    updateWithoutCommit(conn, update_sql, data)
+    data = (lastBuyAmount, lastSellAmount, lastFreezeAmount, GetNowTime(), ownerId, currency)
+    return updateWithoutCommit(conn, update_sql, data)
 
 def insertBalanceLog(conn, ownerId, balanceId, currency, beforeCurrentBalance, endCurrentBalance, beforeBuyAmount, endBuyAmount, beforeSellAmount,  endSellAmount, beforeFreezeAmount, endFreezeAmount, dataType, dataId, bizType):
     save_sql = '''INSERT INTO balanceLog (ownerId, balanceId, currency, beforeCurrentBalance, endCurrentBalance, beforeBuyAmount, endBuyAmount, beforeSellAmount,  endSellAmount, beforeFreezeAmount, endFreezeAmount, dataType, dataId, bizType, createTime, updateTime) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'''
     nowTime = GetNowTime()
-    data = [(ownerId, balanceId, currency, beforeCurrentBalance, endCurrentBalance, beforeBuyAmount, endBuyAmount, beforeSellAmount,  endSellAmount, beforeFreezeAmount, endFreezeAmount, dataType, dataId, bizType, nowTime, nowTime)]
-    saveWithoutCommit(conn, save_sql, data)
+    data = (ownerId, balanceId, currency, beforeCurrentBalance, endCurrentBalance, beforeBuyAmount, endBuyAmount, beforeSellAmount,  endSellAmount, beforeFreezeAmount, endFreezeAmount, dataType, dataId, bizType, nowTime, nowTime)
+    return saveWithoutCommit(conn, save_sql, data)
 
 def insertOrder(conn, ownerId, side, currencyPair, rate, amount, filledAmount, lastFilledRate, status):
     save_sql = '''INSERT INTO `order`(ownerId, side, currencyPair, rate, amount, filledAmount, lastFilledRate, status, createTime, updateTime) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'''
     nowTime = GetNowTime()
-    data = [(ownerId, side, currencyPair, rate, amount, filledAmount, lastFilledRate, status, nowTime, nowTime)]
-    saveWithoutCommit(conn, save_sql, data)
+    data = (ownerId, side, currencyPair, rate, amount, filledAmount, lastFilledRate, status, nowTime, nowTime)
+    return saveWithoutCommit(conn, save_sql, data)
 
 def updateOrder(conn, orderId, lastFilledAmount, lastFilledRate, status):
     update_sql = '''UPDATE `order` SET filledAmount = filledAmount + ?, lastFilledRate = ?, status = ?, updateTime = ? WHERE orderId = ? '''
-    data = [(lastFilledAmount, lastFilledRate, status, GetNowTime(), orderId)]
-    updateWithoutCommit(conn, update_sql, data)
+    data = (lastFilledAmount, lastFilledRate, status, GetNowTime(), orderId)
+    return updateWithoutCommit(conn, update_sql, data)
 
-def queryOrderNotFilled(ownerId, statusAccepted, statusHalfFilled):
-    fetchone_sql = '''SELECT * FROM `order` WHERE ownerId = ? and status in (? , ?) '''
-    data = [(ownerId, statusAccepted, statusHalfFilled)]
+def queryOrderNotFilled(ownerId, side, statusAccepted, statusHalfFilled):
+    fetchone_sql = '''SELECT * FROM `order` WHERE ownerId = ? and side = ? and status in (? , ?) '''
+    data = (ownerId, side, statusAccepted, statusHalfFilled)
     conn = get_conn(DB_FILE_PATH)
-    return fetchall(conn, fetchone_sql, data)
+    return fetchallWithCondition(conn, fetchone_sql, data)
 
 def insertTrade(conn, ownerId, orderId, side, currencyPair, rate, amount, filledAmount, lastFilledRate, lastFilledAmount, status):
     save_sql = '''INSERT INTO `trade`(ownerId, orderId, side, currencyPair, rate, amount, filledAmount, lastFilledRate, lastFilledAmount, status, createTime, updateTime) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'''
@@ -361,7 +383,7 @@ def queryTrade(ownerId):
     fetchone_sql = '''SELECT * FROM `trade` WHERE ownerId = ? order by tradeId desc'''
     data = [(ownerId)]
     conn = get_conn(DB_FILE_PATH)
-    return fetchall(conn, fetchone_sql, data)
+    return fetchallWithCondition(conn, fetchone_sql, data)
 ###############################################################
 ####            业务操作     END
 ###############################################################
@@ -376,7 +398,7 @@ def initData(ownerId, currencyOther, currencyBase, currentBalanceBase):
     DB_FILE_PATH = 'tradeCounter.db'
     #是否打印sql
     global SHOW_SQL
-    SHOW_SQL = True
+    SHOW_SQL = False
     print('show_sql : {}'.format(SHOW_SQL))
     create_table_order()
     create_table_trade()
