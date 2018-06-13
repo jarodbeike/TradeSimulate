@@ -149,7 +149,7 @@ def save(conn, sql, data):
         print('the [{}] is empty or equal None!'.format(sql))
 
 
-def saveWithoutCommit(conn, sql, data):
+def save_without_commit(conn, sql, data):
     '''插入数据'''
     if sql is not None and sql != '':
         if data is not None:
@@ -179,7 +179,7 @@ def fetchall(conn, sql):
         print('the [{}] is empty or equal None!'.format(sql))
 
 
-def fetchallWithCondition(conn, sql, data):
+def fetchall_with_condition(conn, sql, data):
     '''查询所有数据'''
     if sql is not None and sql != '':
         conn.row_factory = dict_factory
@@ -232,7 +232,7 @@ def update(conn, sql, data):
         print('the [{}] is empty or equal None!'.format(sql))
 
 
-def updateWithoutCommit(conn, sql, data):
+def update_without_commit(conn, sql, data):
     '''更新数据'''
     if sql is not None and sql != '':
         if data is not None:
@@ -323,7 +323,7 @@ def create_table_balance():
     create_table(conn, create_table_sql)
 
 
-def create_table_balanceLog():
+def create_table_balance_log():
     # print('创建balanceLog表...')
     create_table_sql = '''CREATE TABLE IF NOT EXISTS `balanceLog` (
                           `balanceLogId` INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -371,7 +371,7 @@ def check_balance(ownerId, currency):
 def update_balance(conn, ownerId, currency, lastBuyAmount, lastSellAmount, lastFreezeAmount):
     update_sql = '''UPDATE `balance` SET buyAmount = buyAmount + ?, sellAmount = sellAmount + ?, freezeAmount = freezeAmount + ?, updateTime = ? WHERE ownerId = ? and currency = ?'''
     data = (lastBuyAmount, lastSellAmount, lastFreezeAmount, get_now_time(), ownerId, currency)
-    return updateWithoutCommit(conn, update_sql, data)
+    return update_without_commit(conn, update_sql, data)
 
 
 def insert_balance_log(conn, ownerId, balanceId, currency, beforeCurrentBalance, endCurrentBalance, beforeBuyAmount,
@@ -382,27 +382,27 @@ def insert_balance_log(conn, ownerId, balanceId, currency, beforeCurrentBalance,
     data = (ownerId, balanceId, currency, beforeCurrentBalance, endCurrentBalance, beforeBuyAmount, endBuyAmount,
             beforeSellAmount, endSellAmount, beforeFreezeAmount, endFreezeAmount, dataType, dataId, bizType, now_time,
             now_time)
-    return saveWithoutCommit(conn, save_sql, data)
+    return save_without_commit(conn, save_sql, data)
 
 
 def insert_order(conn, ownerId, side, currencyPair, rate, amount, filledAmount, lastFilledRate, status):
     save_sql = '''INSERT INTO `order`(ownerId, side, currencyPair, rate, amount, filledAmount, lastFilledRate, status, createTime, updateTime) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'''
     now_time = get_now_time()
     data = (ownerId, side, currencyPair, rate, amount, filledAmount, lastFilledRate, status, now_time, now_time)
-    return saveWithoutCommit(conn, save_sql, data)
+    return save_without_commit(conn, save_sql, data)
 
 
 def update_order(conn, orderId, lastFilledAmount, lastFilledRate, status):
     update_sql = '''UPDATE `order` SET filledAmount = filledAmount + ?, lastFilledRate = ?, status = ?, updateTime = ? WHERE orderId = ? '''
     data = (lastFilledAmount, lastFilledRate, status, get_now_time(), orderId)
-    return updateWithoutCommit(conn, update_sql, data)
+    return update_without_commit(conn, update_sql, data)
 
 
 def query_order_not_filled(ownerId, side, statusAccepted, statusHalfFilled):
     fetchone_sql = '''SELECT * FROM `order` WHERE ownerId = ? and side = ? and status in (? , ?) '''
     data = (ownerId, side, statusAccepted, statusHalfFilled)
     conn = get_conn(DB_FILE_PATH)
-    return fetchallWithCondition(conn, fetchone_sql, data)
+    return fetchall_with_condition(conn, fetchone_sql, data)
 
 
 def insert_trade(conn, ownerId, orderId, side, currencyPair, rate, amount, filledAmount, lastFilledRate,
@@ -411,14 +411,14 @@ def insert_trade(conn, ownerId, orderId, side, currencyPair, rate, amount, fille
     now_time = get_now_time()
     data = [(ownerId, orderId, side, currencyPair, rate, amount, filledAmount, lastFilledRate, lastFilledAmount, status,
              now_time, now_time)]
-    saveWithoutCommit(conn, save_sql, data)
+    save_without_commit(conn, save_sql, data)
 
 
 def query_trade(owner_id):
     fetchone_sql = '''SELECT * FROM `trade` WHERE ownerId = ? order by tradeId desc'''
     data = owner_id
     conn = get_conn(DB_FILE_PATH)
-    return fetchallWithCondition(conn, fetchone_sql, data)
+    return fetchall_with_condition(conn, fetchone_sql, data)
 
 
 ###############################################################
@@ -441,7 +441,7 @@ def init_data(ownerId, currencyOther, currencyBase, currentBalanceBase):
     create_table_order()
     create_table_trade()
     create_table_balance()
-    create_table_balanceLog()
+    create_table_balance_log()
     before = check_balance(ownerId, currencyBase)
     if before is None:
         init_balance(ownerId, currencyBase, currentBalanceBase)
