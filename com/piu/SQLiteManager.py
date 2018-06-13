@@ -407,9 +407,9 @@ def query_order_not_filled(ownerId, side, statusAccepted, statusHalfFilled):
 
 def insert_trade(conn, ownerId, orderId, side, currencyPair, rate, amount, filledAmount, lastFilledRate,
                  lastFilledAmount):
-    save_sql = '''INSERT INTO `trade`(ownerId, orderId, side, currencyPair, rate, amount, filledAmount, lastFilledRate, lastFilledAmount, status, createTime, updateTime) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'''
+    save_sql = '''INSERT INTO `trade`(ownerId, orderId, side, currencyPair, rate, amount, filledAmount, lastFilledRate, lastFilledAmount, createTime, updateTime) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'''
     now_time = get_now_time()
-    data = [(ownerId, orderId, side, currencyPair, rate, amount, filledAmount, lastFilledRate, lastFilledAmount, now_time, now_time)]
+    data = (ownerId, orderId, side, currencyPair, rate, amount, filledAmount, lastFilledRate, lastFilledAmount, now_time, now_time)
     save_without_commit(conn, save_sql, data)
 
 

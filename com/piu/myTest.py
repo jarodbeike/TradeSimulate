@@ -45,6 +45,88 @@ gate_query = GateIO(API_QUERY_URL, apiKey, secretKey)
 gate_trade = GateIO(API_TRADE_URL, apiKey, secretKey)
 
 
+def check_and_build_order(owner_id, currency, last, currency_pair, side, biz_type):
+    balance_base = SQLiteManager.check_balance(owner_id, currency)
+    balance_id = balance_base.get("balanceId")
+    current_balance = balance_base.get("currentBalance")
+    buy_amount = balance_base.get("buyAmount")
+    sell_amount = balance_base.get("sellAmount")
+    freeze_amount = balance_base.get("freezeAmount")
+    available_amount = Decimal(current_balance) - Decimal(freeze_amount) + (
+        Decimal(sell_amount) - Decimal(buy_amount));
+    amount = 100;
+    last_freeze_amount = Decimal(last) * Decimal(amount)
+    # 购买力足够，使用事务进行DB操作
+    if available_amount > last_freeze_amount:
+        conn = SQLiteManager.get_conn(SQLiteManager.DB_FILE_PATH)
+        order_id = SQLiteManager.insert_order(conn, owner_id, side, currency_pair, last, amount, 0, 0,
+                                              STATUS_ACCEPTED)
+        SQLiteManager.update_balance(conn, owner_id, currency, 0, 0,
+                                     str(last_freeze_amount.quantize(Decimal('0.0000'))))
+        end_freeze_amount = last_freeze_amount + Decimal(freeze_amount)
+        SQLiteManager.insert_balance_log(conn, owner_id, balance_id, currency,
+                                         current_balance, current_balance, buy_amount, buy_amount,
+                                         sell_amount, sell_amount, freeze_amount,
+                                         str(end_freeze_amount.quantize(Decimal('0.0000'))),
+                                         DATA_TYPE_ORDER, order_id, biz_type)
+        conn.commit()
+
+
+def show_list(some_list):
+    if some_list is not None and len(some_list) > 0:
+        for e in range(len(some_list)):
+            print(some_list[e])
+
+
+def trade_in_transaction(owner_id, order_id, side, currency_pair, currency_in, currency_out, trade_rate, rate, amount,
+                         biz_type):
+    unfreeze_amount = Decimal(rate) * Decimal(amount)
+    trade_amount = Decimal(trade_rate) * Decimal(amount)
+
+    balance_out = SQLiteManager.check_balance(owner_id, currency_out)
+    out_balance_id = balance_out.get("balanceId")
+    out_current_balance = balance_out.get("currentBalance")
+    out_buy_amount = balance_out.get("buyAmount")
+    out_sell_amount = balance_out.get("sellAmount")
+    out_freeze_amount = balance_out.get("freezeAmount")
+
+    balance_in = SQLiteManager.check_balance(owner_id, currency_in)
+    in_balance_id = balance_in.get("balanceId")
+    in_current_balance = balance_in.get("currentBalance")
+    in_buy_amount = balance_in.get("buyAmount")
+    in_sell_amount = balance_in.get("sellAmount")
+    in_freeze_amount = balance_in.get("freezeAmount")
+
+    conn = SQLiteManager.get_conn(SQLiteManager.DB_FILE_PATH)
+    SQLiteManager.update_order(conn, order_id, amount, trade_rate, STATUS_TOTAL_FILLED)
+    SQLiteManager.insert_trade(conn, owner_id, order_id, side, currency_pair, rate, amount, amount,
+                               trade_rate, amount)
+
+    SQLiteManager.update_balance(conn, owner_id, currency_out, 0,
+                                 str(trade_amount.quantize(Decimal('0.0000'))),
+                                 str(-unfreeze_amount.quantize(Decimal('0.0000'))))
+    end_out_sell_amount = Decimal(out_sell_amount) + trade_amount
+    end_out_freeze_amount = Decimal(out_freeze_amount) - unfreeze_amount
+    SQLiteManager.insert_balance_log(conn, owner_id, out_balance_id, currency_out,
+                                     out_current_balance, out_current_balance, out_buy_amount,
+                                     out_buy_amount,
+                                     out_sell_amount, str(end_out_sell_amount.quantize(Decimal('0.0000'))),
+                                     out_freeze_amount,
+                                     str(end_out_freeze_amount.quantize(Decimal('0.0000'))),
+                                     DATA_TYPE_TRADE, order_id, biz_type)
+
+    SQLiteManager.update_balance(conn, owner_id, currency_in,
+                                 str(trade_amount.quantize(Decimal('0.0000'))), 0, 0)
+    end_other_buy_amount = Decimal(out_buy_amount) + trade_amount
+    SQLiteManager.insert_balance_log(conn, owner_id, in_balance_id, currency_in,
+                                     in_current_balance, in_current_balance, in_buy_amount,
+                                     str(end_other_buy_amount.quantize(Decimal('0.0000'))),
+                                     in_sell_amount, in_sell_amount, in_freeze_amount,
+                                     in_freeze_amount,
+                                     DATA_TYPE_TRADE, order_id, biz_type)
+    conn.commit()
+
+
 def trade_action(arg):
     currency_pair = CURRENCY_OTHER + '_' + CURRENCY_BASE
     # {"eos_usdt":{"decimal_places":4,"min_amount":0.0001,"fee":0.2}}
@@ -59,56 +141,25 @@ def trade_action(arg):
                 amount = buy_order.get("amount")
                 order_id = buy_order.get("orderId")
                 last = ticker.get("last")
-                if Decimal(last) > Decimal(rate):
-                    unfreeze_amount = Decimal(last) * Decimal(amount)
-                    trade_amount = Decimal(last) * Decimal(amount)
-
-                    balance_base = SQLiteManager.check_balance(OWNER_ID, CURRENCY_BASE)
-                    base_balance_id = balance_base.get("balanceId")
-                    base_current_balance = balance_base.get("currentBalance")
-                    base_buy_amount = balance_base.get("buyAmount")
-                    base_sell_amount = balance_base.get("sellAmount")
-                    base_freeze_amount = balance_base.get("freezeAmount")
-
-                    balance_other = SQLiteManager.check_balance(OWNER_ID, CURRENCY_OTHER)
-                    other_balance_id = balance_other.get("balanceId")
-                    other_current_balance = balance_other.get("currentBalance")
-                    other_buy_amount = balance_other.get("buyAmount")
-                    other_sell_amount = balance_other.get("sellAmount")
-                    other_freeze_amount = balance_other.get("freezeAmount")
-
-                    conn = SQLiteManager.get_conn(SQLiteManager.DB_FILE_PATH)
-                    SQLiteManager.update_order(conn, order_id, amount, last, STATUS_TOTAL_FILLED)
-                    SQLiteManager.insert_trade(conn, OWNER_ID, order_id, SIDE_BUY, currency_pair, rate, amount, amount,
-                                               last, amount)
-
-                    SQLiteManager.update_balance(conn, OWNER_ID, CURRENCY_BASE,
-                                                 str(trade_amount.quantize(Decimal('0.0000'))), 0,
-                                                 str(-unfreeze_amount.quantize(Decimal('0.0000'))))
-                    end_base_freeze_amount = Decimal(base_freeze_amount) - unfreeze_amount
-                    end_base_sell_amount = Decimal(base_sell_amount) + trade_amount
-                    SQLiteManager.insert_balance_log(conn, OWNER_ID, base_balance_id, CURRENCY_BASE,
-                                                     base_current_balance, base_current_balance, base_buy_amount,
-                                                     base_buy_amount,
-                                                     base_sell_amount, end_base_sell_amount, base_freeze_amount,
-                                                     str(end_base_freeze_amount.quantize(Decimal('0.0000'))),
-                                                     DATA_TYPE_TRADE, order_id, BIZ_TYPE_BUY_TRADE)
-
-                    SQLiteManager.update_balance(conn, OWNER_ID, CURRENCY_OTHER,
-                                                 str(trade_amount.quantize(Decimal('0.0000'))), 0, 0)
-                    end_other_buy_amount = Decimal(base_buy_amount) + trade_amount
-                    SQLiteManager.insert_balance_log(conn, OWNER_ID, other_balance_id, CURRENCY_OTHER,
-                                                     other_current_balance, other_current_balance, other_buy_amount,
-                                                     end_other_buy_amount,
-                                                     base_sell_amount, base_sell_amount, base_freeze_amount,
-                                                     base_freeze_amount,
-                                                     DATA_TYPE_TRADE, order_id, BIZ_TYPE_BUY_TRADE)
+                if Decimal(last) >= Decimal(rate):
+                    trade_in_transaction(OWNER_ID, order_id, SIDE_BUY, currency_pair, CURRENCY_OTHER, CURRENCY_BASE,
+                                         last, rate, amount, BIZ_TYPE_BUY_TRADE)
+                    print('订单成交{}', format(buy_order))
 
         sell_order_open_list = SQLiteManager.query_order_not_filled(OWNER_ID, SIDE_SELL, STATUS_ACCEPTED,
                                                                     STATUS_HALF_FILLED)
         if sell_order_open_list is not None:
             for e in range(len(sell_order_open_list)):
-                print(sell_order_open_list[e])
+                sell_order = sell_order_open_list[e]
+                rate = sell_order.get("rate")
+                amount = sell_order.get("amount")
+                order_id = sell_order.get("orderId")
+                last = ticker.get("last")
+                if Decimal(last) <= Decimal(rate):
+                    trade_in_transaction(OWNER_ID, order_id, SIDE_SELL, currency_pair, CURRENCY_BASE, CURRENCY_OTHER,
+                                         last, rate, amount, BIZ_TYPE_SELL_TRADE)
+                    print('订单成交{}', format(sell_order))
+
         time.sleep(10)
 
 
@@ -117,40 +168,12 @@ def order_action(arg):
     # {"eos_usdt":{"decimal_places":4,"min_amount":0.0001,"fee":0.2}}
     while (1):
         ticker = gate_query.ticker(currency_pair)
+        last = ticker.get("last")
         # 买入订单创建，在挂订单不能超过10个
         buy_order_open_list = SQLiteManager.query_order_not_filled(OWNER_ID, SIDE_BUY, STATUS_ACCEPTED,
                                                                    STATUS_HALF_FILLED)
         if buy_order_open_list is None or len(buy_order_open_list) < 10:
-            last = ticker.get("last")
-            balance_base = SQLiteManager.check_balance(OWNER_ID, CURRENCY_BASE)
-            balance_id = balance_base.get("balanceId")
-            current_balance = balance_base.get("currentBalance")
-            buy_amount = balance_base.get("buyAmount")
-            sell_amount = balance_base.get("sellAmount")
-            freeze_amount = balance_base.get("freezeAmount")
-            available_amount = Decimal(current_balance) - Decimal(freeze_amount) + (
-                Decimal(sell_amount) - Decimal(buy_amount));
-            amount = 100;
-            last_freeze_amount = Decimal(last) * Decimal(amount)
-            print(
-                'buy_availableAmount:[{}],buy_lastFreezeAmount:[{}]'.format(
-                    available_amount.quantize(Decimal('0.0000')),
-                    last_freeze_amount.quantize(
-                        Decimal('0.0000'))))
-            # 购买力足够，使用事务进行DB操作
-            if available_amount > last_freeze_amount:
-                conn = SQLiteManager.get_conn(SQLiteManager.DB_FILE_PATH)
-                order_id = SQLiteManager.insert_order(conn, OWNER_ID, SIDE_BUY, currency_pair, last, amount, 0, 0,
-                                                      STATUS_ACCEPTED)
-                SQLiteManager.update_balance(conn, OWNER_ID, CURRENCY_BASE, 0, 0,
-                                             str(last_freeze_amount.quantize(Decimal('0.0000'))))
-                end_freeze_amount = last_freeze_amount + Decimal(freeze_amount)
-                SQLiteManager.insert_balance_log(conn, OWNER_ID, balance_id, CURRENCY_BASE,
-                                                 current_balance, current_balance, buy_amount, buy_amount,
-                                                 sell_amount, sell_amount, freeze_amount,
-                                                 str(end_freeze_amount.quantize(Decimal('0.0000'))),
-                                                 DATA_TYPE_ORDER, order_id, BIZ_TYPE_BUY_ORDER)
-                conn.commit()
+            check_and_build_order(OWNER_ID, CURRENCY_BASE, last, currency_pair, SIDE_BUY, BIZ_TYPE_BUY_ORDER)
         # 展示已有未成交订单
         # showList(buyOrderOpenList)
         end_balance_base = SQLiteManager.check_balance(OWNER_ID, CURRENCY_BASE)
@@ -160,45 +183,13 @@ def order_action(arg):
         sell_order_open_list = SQLiteManager.query_order_not_filled(OWNER_ID, SIDE_SELL, STATUS_ACCEPTED,
                                                                     STATUS_HALF_FILLED)
         if sell_order_open_list is None or len(sell_order_open_list) < 10:
-            last = ticker.get("last")
-            balance_base = SQLiteManager.check_balance(OWNER_ID, CURRENCY_OTHER)
-            balance_id = balance_base.get("balanceId")
-            current_balance = balance_base.get("currentBalance")
-            buy_amount = balance_base.get("buyAmount")
-            sell_amount = balance_base.get("sellAmount")
-            freeze_amount = balance_base.get("freezeAmount")
-            available_amount = Decimal(current_balance) - Decimal(freeze_amount) + (
-                Decimal(sell_amount) - Decimal(buy_amount));
-            amount = 100;
-            last_freeze_amount = Decimal(last) * Decimal(amount)
-            print('sell_availableAmount:[{}],sell_lastFreezeAmount:[{}]'.format(
-                available_amount.quantize(Decimal('0.0000')), last_freeze_amount.quantize(Decimal('0.0000'))))
-            # 购买力足够，使用事务进行DB操作
-            if available_amount > last_freeze_amount:
-                conn = SQLiteManager.get_conn(SQLiteManager.DB_FILE_PATH)
-                order_id = SQLiteManager.insert_order(conn, OWNER_ID, SIDE_SELL, currency_pair, last, amount, 0, 0,
-                                                      STATUS_ACCEPTED)
-                SQLiteManager.update_balance(conn, OWNER_ID, CURRENCY_OTHER, 0, 0,
-                                             str(last_freeze_amount.quantize(Decimal('0.0000'))))
-                end_freeze_amount = last_freeze_amount + Decimal(freeze_amount)
-                SQLiteManager.insert_balance_log(conn, OWNER_ID, balance_id, CURRENCY_OTHER,
-                                                 current_balance, current_balance, buy_amount, buy_amount,
-                                                 sell_amount, sell_amount, freeze_amount,
-                                                 str(end_freeze_amount.quantize(Decimal('0.0000'))),
-                                                 DATA_TYPE_ORDER, order_id, BIZ_TYPE_SELL_ORDER)
-                conn.commit()
+            check_and_build_order(OWNER_ID, CURRENCY_OTHER, last, currency_pair, SIDE_SELL, BIZ_TYPE_SELL_ORDER)
         # 展示已有未成交订单
         # showList(sellOrderOpenList)
         end_balance_other = SQLiteManager.check_balance(OWNER_ID, CURRENCY_OTHER)
         print(end_balance_other)
 
         time.sleep(10)
-
-
-def show_list(some_list):
-    if some_list is not None and len(some_list) > 0:
-        for e in range(len(some_list)):
-            print(some_list[e])
 
 
 def main():
